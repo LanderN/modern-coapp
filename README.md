@@ -1,0 +1,1 @@
+modern-coapp aims to be a modern and easy-to-use C++ library for handling CoAP PDUs (as defined by RFC7252).
