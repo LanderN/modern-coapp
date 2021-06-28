@@ -3,7 +3,75 @@
 #include <string_view>
 #include <vector>
 
+#define RESPONSE_CODE(Code)  ((((Code) / 100) << 5) | ((Code) % 100))
+#define RESPONSE_CLASS(Code) ((Code) >> 5)
+
 namespace coapp {
+
+enum Type: uint8_t {
+    Confirmable = 0,
+    NonConfirmable,
+    Acknowledgement,
+    Reset
+};
+
+enum Method: uint8_t {
+    GET = 1,
+    POST,
+    PUT,
+    DELETE,
+};
+
+enum Code: uint8_t {
+    Empty = 0,
+
+    REQUEST_GET    = Method::GET,
+    REQUEST_POST   = Method::POST,
+    REQUEST_PUT    = Method::PUT,
+    REQUEST_DELETE = Method::DELETE,
+
+    RESPONSE_CREATED                    = RESPONSE_CODE(201),
+    RESPONSE_DELETED                    = RESPONSE_CODE(202),
+    RESPONSE_VALID                      = RESPONSE_CODE(203),
+    RESPONSE_CHANGED                    = RESPONSE_CODE(204),
+    RESPONSE_CONTENT                    = RESPONSE_CODE(205),
+    RESPONSE_BAD_REQUEST                = RESPONSE_CODE(400),
+    RESPONSE_UNAUTHORIZED               = RESPONSE_CODE(401),
+    RESPONSE_BAD_OPTION                 = RESPONSE_CODE(402),
+    RESPONSE_FORBIDDEN                  = RESPONSE_CODE(403),
+    RESPONSE_NOT_FOUND                  = RESPONSE_CODE(404),
+    RESPONSE_NOT_ALLOWED                = RESPONSE_CODE(405),
+    RESPONSE_NOT_ACCEPTABLE             = RESPONSE_CODE(406),
+    RESPONSE_PRECONDITION_FAILED        = RESPONSE_CODE(412),
+    RESPONSE_REQUEST_TOO_LARGE          = RESPONSE_CODE(413),
+    RESPONSE_UNSUPPORTED_CONTENT_FORMAT = RESPONSE_CODE(415),
+    RESPONSE_INTERNAL_SERVER_ERROR      = RESPONSE_CODE(500),
+    RESPONSE_NOT_IMPLEMENTED            = RESPONSE_CODE(501),
+    RESPONSE_BAD_GATEWAY                = RESPONSE_CODE(502),
+    RESPONSE_SERVICE_UNAVAILABLE        = RESPONSE_CODE(503),
+    RESPONSE_GATEWAY_TIMEOUT            = RESPONSE_CODE(504),
+    RESPONSE_PROXYING_NOT_SUPPORTED     = RESPONSE_CODE(505),
+};
+
+enum Option {
+    IfMatch =       1,
+    UriHost =       3,
+    ETag =          4,
+    IfNoneMatch =   5,
+    Observe =       6,
+    UriPort =       7,
+    LocationPath =  8,
+    UriPath =       11,
+    ContentFormat = 12,
+    MaxAge =        14,
+    UriQuery =      15,
+    Accept =        17,
+    LocationQuery = 20,
+    Block2 =        23,
+    Block1 =        27,
+    Size2 =         28,
+    Size1 =         60
+};
 
 class invalid_pdu : public std::exception {};
 
@@ -42,12 +110,12 @@ public:
         if (result._version != 1)
             throw invalid_pdu();
 
-        result._type = (header & 0b00110000) >> 4;
+        result._type = static_cast<Type>((header & 0b00110000) >> 4);
         auto token_length = (header & 0b00001111);
         if (token_length > 8)
             throw invalid_pdu();
 
-        result._code = bytes[1];
+        result._code = static_cast<Code>(bytes[1]);
         result._message_id = (bytes[2] << 8) | (bytes[3]);
 
         // Parse token
@@ -205,12 +273,12 @@ public:
         return _version;
     }
 
-    uint8_t type() const
+    Type type() const
     {
         return _type;
     }
 
-    uint8_t code() const
+    Code code() const
     {
         return _code;
     }
@@ -230,11 +298,6 @@ public:
         return _options;
     }
 
-    const std::vector<uint8_t>& payload_raw() const
-    {
-        return _payload;
-    }
-
     std::string_view payload() const
     {
         static_assert(sizeof(uint8_t) == sizeof(char));
@@ -244,12 +307,22 @@ public:
         };
     }
 
-    void set_type(uint8_t type)
+    void set_type(Type type)
     {
         if (type > 3)
             throw invalid_pdu();
 
         _type = type;
+    }
+
+    void set_code(Code code)
+    {
+        _code = code;
+    }
+
+    void set_message_id(uint16_t mid)
+    {
+        _message_id = mid;
     }
 
     void set_token(std::vector<uint8_t> token)
@@ -265,23 +338,26 @@ public:
         _options.push_back(std::move(opt));
     }
 
-    void set_payload(std::vector<uint8_t> payload)
+    void set_payload(std::string payload)
     {
         _payload = std::move(payload);
     }
 
 private:
     uint8_t _version { 1 };
-    uint8_t _type { 0 };
+    Type _type { 0 };
 
-    uint8_t _code { 0 };
+    Code _code { 0 };
     uint16_t _message_id { 0 };
 
     std::vector<uint8_t> _token;
 
     std::vector<option> _options;
 
-    std::vector<uint8_t> _payload;
+    std::string _payload;
 };
 
 }
+
+#undef RESPONSE_CODE
+#undef RESPONSE_CLASS

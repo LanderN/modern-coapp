@@ -51,7 +51,6 @@ TEST_CASE( "PDU with payload should parse correctly", "[parse]" ) {
 
     auto pdu = coapp::pdu::from(raw_pdu);
 
-    REQUIRE( pdu.payload_raw() == std::vector<uint8_t> { 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41 } );
     REQUIRE( pdu.payload() == "AAAAAAAAAAAAAA" );
 
     REQUIRE ( pdu.to_bytes() == raw_pdu );
