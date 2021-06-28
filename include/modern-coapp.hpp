@@ -177,7 +177,6 @@ public:
         return result;
     }
 
-    // TODO: cleanup options encoding, there must be a better way
     std::vector<uint8_t> to_bytes() const
     {
         auto required_size = 4; // header length
@@ -186,24 +185,51 @@ public:
         if (auto pl_size = _payload.size())
             required_size += 1 /* separator */ + pl_size;
 
-        auto prev_delta = 0;
-        for (const auto& option: _options) {
-            required_size += 1; // at least 1 byte
+        // Encode Options
+        std::vector<uint8_t> options_buf;
+        if (_options.size()) {
+            // Try to minimize allocations, options will typically fit in 1024 bytes
+            // (does not increase vector size)
+            options_buf.reserve(1024);
 
-            auto option_delta = option.number - prev_delta;
-            prev_delta = option.number;
-            auto get_size = [&] (const uint32_t& val) {
-                if (val < 13)
-                    return 0;
+            auto prev_delta = 0;
+            for (const auto& option: _options) {
+                auto option_delta = option.number - prev_delta;
+                prev_delta = option.number;
 
-                if (val < 269)
-                    return 1;
+                auto get_nibble = [&] (const uint32_t& val) -> uint8_t {
+                    if (val < 13)
+                        return val;
+                    if (val < 269)
+                        return 13;
+                    return 14;
+                };
 
-                return 2;
-            };
-            required_size += get_size(option_delta);
-            required_size += get_size(option.value.size());
-            required_size += option.value.size();
+                uint8_t delta_nibble = get_nibble(option_delta);
+                uint8_t length_nibble = get_nibble(option.value.size());
+                options_buf.push_back((delta_nibble << 4) | length_nibble);
+
+                auto encode_val = [&] (const uint8_t nibble, const uint32_t& val) {
+                    if (nibble < 13)
+                        return; // already encoded in nibble
+
+                    if (nibble == 13) {
+                        options_buf.push_back(val - 13);
+                    } else if (nibble == 14) {
+                        auto encoded_val = val - 269;
+                        assert(encoded_val <= std::numeric_limits<uint16_t>::max());
+                        options_buf.push_back(encoded_val >> 8);
+                        options_buf.push_back(encoded_val);
+                    }
+                };
+                encode_val(delta_nibble, option_delta);
+                encode_val(length_nibble, option.value.size());
+
+                std::copy(option.value.begin(), option.value.end(),
+                          std::back_inserter(options_buf));
+            }
+
+            required_size += options_buf.size();
         }
 
         std::vector<uint8_t> bytes(required_size);
@@ -220,43 +246,9 @@ public:
         it += _token.size();
 
         // Options
-        prev_delta = 0;
-        for (const auto& option: _options) {
-
-            auto option_delta = option.number - prev_delta;
-            prev_delta = option.number;
-
-            auto get_nibble = [&] (const uint32_t& val) -> uint8_t {
-                if (val < 13)
-                    return val;
-                if (val < 269)
-                    return 13;
-                return 14;
-            };
-
-            uint8_t delta_nibble = get_nibble(option_delta);
-            uint8_t length_nibble = get_nibble(option.value.size());
-            *it = (delta_nibble << 4) | length_nibble;
-
-            auto encode_val = [&] (const uint8_t nibble, const uint32_t& val) {
-                if (nibble < 13)
-                    return;
-
-                if (nibble == 13) {
-                    *(++it) = val - 13;
-                } else if (nibble == 14) {
-                    auto encoded_val = val - 269;
-                    assert(encoded_val <= std::numeric_limits<uint16_t>::max());
-                    *(++it) = encoded_val >> 8;
-                    *(++it) = encoded_val;
-                }
-            };
-            encode_val(delta_nibble, option_delta);
-            encode_val(length_nibble, option.value.size());
-
-            std::copy(option.value.begin(), option.value.end(), ++it);
-
-            it += option.value.size();
+        if (auto s = options_buf.size()) {
+            std::move(options_buf.begin(), options_buf.end(), it);
+            it += s;
         }
 
         // Payload
