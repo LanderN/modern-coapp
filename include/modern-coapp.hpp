@@ -75,18 +75,23 @@ enum Option {
 
 class invalid_pdu : public std::exception {};
 
-struct option
-{
-    uint32_t number { 0 };
-    std::vector<uint8_t> value;
-};
-
 class pdu
 {
 public:
+    using byte_t = uint8_t;
+    using bytes_t = std::vector<byte_t>;
+
+    using token_t = bytes_t;
+
+    using option_number_t = uint32_t;
+    using option_value_t = bytes_t;
+    using options_t = std::multimap<option_number_t, option_value_t>;
+
+    using payload_t = std::string;
+
     pdu() = default;
 
-    static pdu from(std::vector<uint8_t> bytes)
+    static pdu from(bytes_t bytes)
     {
         /*
 
@@ -132,7 +137,7 @@ public:
 
         // Parse options
         // Options and payload are separated by a FF byte
-        uint32_t option_number = 0;
+        option_number_t option_number = 0;
         while (it < bytes.end() && (*it) != 0xff) {
             // https://datatracker.ietf.org/doc/html/rfc7252#section-3.1
 
@@ -157,10 +162,10 @@ public:
                 throw invalid_pdu();
 
             option_number += option_delta;
-            result._options.emplace_back(option {
+            result._options.emplace(std::make_pair(
                 option_number,
-                { it, option_end }
-            });
+                option_value_t { it, option_end }
+            ));
 
             it = option_end;
         }
@@ -177,7 +182,7 @@ public:
         return result;
     }
 
-    std::vector<uint8_t> to_bytes() const
+    bytes_t to_bytes() const
     {
         auto required_size = 4; // header length
         required_size += _token.size();
@@ -186,16 +191,16 @@ public:
             required_size += 1 /* separator */ + pl_size;
 
         // Encode Options
-        std::vector<uint8_t> options_buf;
+        bytes_t options_buf;
         if (_options.size()) {
             // Try to minimize allocations, options will typically fit in 1024 bytes
             // (does not increase vector size)
             options_buf.reserve(1024);
 
             auto prev_delta = 0;
-            for (const auto& option: _options) {
-                auto option_delta = option.number - prev_delta;
-                prev_delta = option.number;
+            for (const auto& [number, value]: _options) {
+                auto option_delta = number - prev_delta;
+                prev_delta = number;
 
                 auto get_nibble = [&] (const uint32_t& val) -> uint8_t {
                     if (val < 13)
@@ -205,11 +210,11 @@ public:
                     return 14;
                 };
 
-                uint8_t delta_nibble = get_nibble(option_delta);
-                uint8_t length_nibble = get_nibble(option.value.size());
+                byte_t delta_nibble = get_nibble(option_delta);
+                byte_t length_nibble = get_nibble(value.size());
                 options_buf.push_back((delta_nibble << 4) | length_nibble);
 
-                auto encode_val = [&] (const uint8_t nibble, const uint32_t& val) {
+                auto encode_val = [&] (const byte_t nibble, const uint32_t& val) {
                     if (nibble < 13)
                         return; // already encoded in nibble
 
@@ -223,16 +228,16 @@ public:
                     }
                 };
                 encode_val(delta_nibble, option_delta);
-                encode_val(length_nibble, option.value.size());
+                encode_val(length_nibble, value.size());
 
-                std::copy(option.value.begin(), option.value.end(),
+                std::copy(value.begin(), value.end(),
                           std::back_inserter(options_buf));
             }
 
             required_size += options_buf.size();
         }
 
-        std::vector<uint8_t> bytes(required_size);
+        bytes_t bytes(required_size);
 
         // Header
         bytes[0] = (_version << 6) | (_type << 4) | _token.size();
@@ -280,23 +285,19 @@ public:
         return _message_id;
     }
 
-    const std::vector<uint8_t>& token() const
+    const token_t& token() const
     {
         return _token;
     }
 
-    const std::vector<option>& options() const
+    const options_t& options() const
     {
         return _options;
     }
 
     std::string_view payload() const
     {
-        static_assert(sizeof(uint8_t) == sizeof(char));
-        return {
-            reinterpret_cast<const char*>(_payload.data()),
-            _payload.size()
-        };
+        return _payload;
     }
 
     void set_type(Type type)
@@ -317,7 +318,7 @@ public:
         _message_id = mid;
     }
 
-    void set_token(std::vector<uint8_t> token)
+    void set_token(bytes_t token)
     {
         if (token.size() > 8)
             throw invalid_pdu();
@@ -325,12 +326,12 @@ public:
         _token = std::move(token);
     }
 
-    void add_option(option opt)
+    void add_option(option_number_t number, option_value_t value)
     {
-        _options.push_back(std::move(opt));
+        _options.emplace(std::make_pair(number, std::move(value)));
     }
 
-    void set_payload(std::string payload)
+    void set_payload(payload_t payload)
     {
         _payload = std::move(payload);
     }
@@ -342,11 +343,11 @@ private:
     Code _code { 0 };
     uint16_t _message_id { 0 };
 
-    std::vector<uint8_t> _token;
+    bytes_t _token;
 
-    std::vector<option> _options;
+    options_t _options;
 
-    std::string _payload;
+    payload_t _payload;
 };
 
 }

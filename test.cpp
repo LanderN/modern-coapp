@@ -83,8 +83,8 @@ TEST_CASE( "PDU with valid option should parse correctly", "[parse]" ) {
     auto& options = pdu.options();
 
     REQUIRE (options.size() == 1);
-    REQUIRE (options[0].number == 1);
-    REQUIRE (options[0].value == std::vector<uint8_t> { 0xff });
+    REQUIRE (options.begin()->first == 1);
+    REQUIRE (options.begin()->second == std::vector<uint8_t> { 0xff });
 
     REQUIRE (pdu.to_bytes() == raw_pdu);
 }
@@ -115,14 +115,20 @@ TEST_CASE( "[1] PDU with multiple options should parse correctly", "[parse]" ) {
 
     REQUIRE (options.size() == 3);
 
-    REQUIRE (options[0].number == 1);
-    REQUIRE (options[0].value == std::vector<uint8_t> { 0xff });
+    auto opt_it = options.begin();
 
-    REQUIRE (options[1].number == 2);
-    REQUIRE (options[1].value == std::vector<uint8_t> { 0xff });
+    REQUIRE (opt_it->first == 1);
+    REQUIRE (opt_it->second == std::vector<uint8_t> { 0xff });
 
-    REQUIRE (options[2].number == 5);
-    REQUIRE (options[2].value == std::vector<uint8_t> { 0xff, 0xff, 0xff });
+    opt_it++;
+
+    REQUIRE (opt_it->first == 2);
+    REQUIRE (opt_it->second == std::vector<uint8_t> { 0xff });
+
+    opt_it++;
+
+    REQUIRE (opt_it->first == 5);
+    REQUIRE (opt_it->second == std::vector<uint8_t> { 0xff, 0xff, 0xff });
 
     REQUIRE (pdu.payload() == "BBBB");
 
@@ -163,20 +169,30 @@ TEST_CASE( "[2] PDU with multiple options should parse correctly 2", "[parse]" )
 
     REQUIRE (options.size() == 5);
 
-    REQUIRE (options[0].number == 1);
-    REQUIRE (options[0].value == std::vector<uint8_t> { 0xff });
+    auto opt_it = options.begin();
 
-    REQUIRE (options[1].number == 2);
-    REQUIRE (options[1].value == std::vector<uint8_t> { 0xff });
+    REQUIRE (opt_it->first == 1);
+    REQUIRE (opt_it->second == std::vector<uint8_t> { 0xff });
 
-    REQUIRE (options[2].number == 5);
-    REQUIRE (options[2].value == std::vector<uint8_t> { 0xff, 0xff, 0xff });
+    opt_it++;
 
-    REQUIRE (options[3].number == 273);
-    REQUIRE (options[3].value == std::vector<uint8_t> { 0xff, 0xff, 0xff });
+    REQUIRE (opt_it->first == 2);
+    REQUIRE (opt_it->second == std::vector<uint8_t> { 0xff });
 
-    REQUIRE (options[4].number == 66077);
-    REQUIRE (options[4].value == std::vector<uint8_t> { 0xff, 0xff, 0xff });
+    opt_it++;
+
+    REQUIRE (opt_it->first == 5);
+    REQUIRE (opt_it->second == std::vector<uint8_t> { 0xff, 0xff, 0xff });
+
+    opt_it++;
+
+    REQUIRE (opt_it->first == 273);
+    REQUIRE (opt_it->second == std::vector<uint8_t> { 0xff, 0xff, 0xff });
+
+    opt_it++;
+
+    REQUIRE (opt_it->first == 66077);
+    REQUIRE (opt_it->second == std::vector<uint8_t> { 0xff, 0xff, 0xff });
 
     REQUIRE (pdu.payload() == "BBBB");
 
@@ -231,19 +247,89 @@ TEST_CASE( "libcoap 1", "[parse]" ) {
     REQUIRE (pdu.token() == std::vector<uint8_t> { 0x0, 0x0 });
 
     auto& options = pdu.options();
+    auto opt_it = options.begin();
 
     REQUIRE (options.size() == 3);
-    REQUIRE (options[0].number == 8);
-    REQUIRE (options[1].number == 8);
-    REQUIRE (options[2].number == 20);
 
     const char* data0 = "coap://example.com/12345/%3Fxyz/3048234234/23402348234/239084234-23/%AB%30%af/+123/hfksdh/23480-234-98235/1204/243546345345243/0198sdn3-a-3///aff0934/97u2141/0002/3932423532/56234023/----/=1234=/098141-9564643/21970-----/82364923472wererewr0-921-39123-34/";
     const char* data1 = "//492403--098/";
     const char* data2 = "*";
 
-    REQUIRE ( memcmp(data0, options[0].value.data(), options[0].value.size()) == 0 );
-    REQUIRE ( memcmp(data1, options[1].value.data(), options[1].value.size()) == 0 );
-    REQUIRE ( memcmp(data2, options[2].value.data(), options[2].value.size()) == 0 );
+    REQUIRE (opt_it->first == 8);
+    REQUIRE ( memcmp(data0, opt_it->second.data(), opt_it->second.size()) == 0 );
+
+    opt_it++;
+
+    REQUIRE (opt_it->first == 8);
+    REQUIRE ( memcmp(data1, opt_it->second.data(), opt_it->second.size()) == 0 );
+
+    opt_it++;
+
+    REQUIRE (opt_it->first == 20);
+    REQUIRE ( memcmp(data2, opt_it->second.data(), opt_it->second.size()) == 0 );
+
+    opt_it++;
 
     REQUIRE (pdu.to_bytes() == raw_pdu);
+}
+
+TEST_CASE( "should be able to insert options in any order", "[build]" ) {
+    std::vector<uint8_t> target_bytes = {
+         0b01100000u,  // Ver: 1, Type: 2, TKL: 0
+
+        2,   // Code
+
+        1,0, // MID: 0000 0001 0000 0000 => 256
+
+        0b00010001, // Option delta = 1, Option length = 1
+        0xff,       // Option value = 0xff
+
+        0b00010001, // Option delta = 1, Option length = 1
+        0xff,       // Option value = 0xff
+
+        0b00110011,       // Option delta = 3, Option length = 3
+        0xff, 0xff, 0xff, // Option value = 0xff 0xff 0xff
+
+        0b11010011,       // Option delta = 13, Option length = 3
+        0xff,             // Option delta - 13 = 255 => Option delta = 268
+        0xff, 0xff, 0xff, // Option value = 0xff 0xff 0xff
+
+        0b11100011,       // Option delta = 14, Option length = 3
+        0xff, 0xff,       // Option delta - 269 = 65535 => Option delta = 65804
+        0xff, 0xff, 0xff, // Option value = 0xff 0xff 0xff
+
+        0xff, // Payload separator
+        0x42, 0x42, 0x42, 0x42 // Payload
+    };
+
+    coapp::pdu pdu;
+
+    pdu.set_type(coapp::Type::Acknowledgement);
+    pdu.set_code(coapp::Code::REQUEST_POST);
+    pdu.set_message_id(256);
+
+    pdu.add_option(
+        66077,
+        { 0xff, 0xff, 0xff }
+    );
+    pdu.add_option(
+        5,
+        { 0xff, 0xff, 0xff }
+    );
+    pdu.add_option(
+        1,
+        { 0xff }
+    );
+    pdu.add_option(
+        2,
+        { 0xff }
+    );
+    pdu.add_option(
+        273,
+        { 0xff, 0xff, 0xff }
+    );
+
+    pdu.set_payload({ 0x42, 0x42, 0x42, 0x42 });
+
+    REQUIRE (pdu.to_bytes() == target_bytes);
 }
