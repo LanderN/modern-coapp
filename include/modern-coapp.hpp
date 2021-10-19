@@ -35,6 +35,7 @@ enum Code: uint8_t {
     RESPONSE_VALID                      = RESPONSE_CODE(203),
     RESPONSE_CHANGED                    = RESPONSE_CODE(204),
     RESPONSE_CONTENT                    = RESPONSE_CODE(205),
+    RESPONSE_CONTINUE                   = RESPONSE_CODE(231),
     RESPONSE_BAD_REQUEST                = RESPONSE_CODE(400),
     RESPONSE_UNAUTHORIZED               = RESPONSE_CODE(401),
     RESPONSE_BAD_OPTION                 = RESPONSE_CODE(402),
